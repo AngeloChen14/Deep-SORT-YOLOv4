@@ -175,3 +175,17 @@ class NearestNeighborDistanceMetric(object):
         for i, target in enumerate(targets):
             cost_matrix[i, :] = self._metric(self.samples[target], features)
         return cost_matrix
+
+    def cross_metric(self, x, y):
+       
+        return _cosine_distance(x, y).min()
+
+    def cross_distance(self, metric_2, targets_1, targets_2):
+        cost_matrix = np.zeros((len(targets_1), len(targets_2)))
+        for i, target_1 in enumerate(targets_1):
+            for j, target_2 in enumerate(targets_2):
+              cost_matrix[i, j] = self.cross_metric(self.samples[target_1], metric_2.samples[target_2])
+        
+        return cost_matrix
+
+

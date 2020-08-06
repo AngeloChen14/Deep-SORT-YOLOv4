@@ -37,14 +37,13 @@ class Tracker:
 
     """
 
-    def __init__(self, metric, max_iou_distance=0.7, max_age=30, n_init=3, adc_threshold=0.5):
+    def __init__(self, metric, max_iou_distance=0.7, max_age=5, n_init=2, adc_threshold=0.5, frame_rate=12): # default：0.7;30;3;0.5
         self.metric = metric
         self.max_iou_distance = max_iou_distance
         self.max_age = max_age
         self.n_init = n_init
         self.adc_threshold = adc_threshold
-
-        self.kf = kalman_filter.KalmanFilter()
+        self.kf = kalman_filter.KalmanFilter(frame_rate)
         self.tracks = []
         self._next_id = 1
 
@@ -55,6 +54,12 @@ class Tracker:
         """
         for track in self.tracks:
             track.predict(self.kf)
+
+    def predict_ns(self, dt):
+        """Propagate track state distributions ns time step forward.
+        """
+        for track in self.tracks:
+            track.predict_ns(self.kf, dt)
 
     def update(self, detections):
         """Perform measurement update and track management.
@@ -99,7 +104,7 @@ class Tracker:
             cost_matrix = self.metric.distance(features, targets)
             cost_matrix = linear_assignment.gate_cost_matrix(
                 self.kf, cost_matrix, tracks, dets, track_indices,
-                detection_indices)
+                detection_indices,only_position=True)
 
             return cost_matrix
 
@@ -118,10 +123,10 @@ class Tracker:
         # Associate remaining tracks together with unconfirmed tracks using IOU.
         iou_track_candidates = unconfirmed_tracks + [
             k for k in unmatched_tracks_a if
-            self.tracks[k].time_since_update == 1]
+            self.tracks[k].time_since_update < 3]
         unmatched_tracks_a = [
             k for k in unmatched_tracks_a if
-            self.tracks[k].time_since_update != 1]
+            self.tracks[k].time_since_update >= 3]
         matches_b, unmatched_tracks_b, unmatched_detections = \
             linear_assignment.min_cost_matching(
                 iou_matching.iou_cost, self.max_iou_distance, self.tracks,
@@ -137,3 +142,32 @@ class Tracker:
             mean, covariance, self._next_id, self.n_init, self.max_age, detection.cls, self.adc_threshold, detection.confidence,
             detection.feature))
         self._next_id += 1
+
+def cross_tracker_match(tracker_1, tracker_2, threshold):
+
+    def cross_metric(tracks_1, tracks_2, track_1_indices, track_2_indices):
+        targets_1 = np.array([tracks_1[i].track_id for i in track_1_indices])
+        targets_2 = np.array([tracks_2[i].track_id for i in track_2_indices])
+        cost_matrix = tracker_1.metric.cross_distance(tracker_2.metric, targets_1, targets_2)
+        return cost_matrix
+
+    confirmed_tracks_1 = [i for i, t in enumerate(tracker_1.tracks) if t.is_confirmed()]
+    confirmed_tracks_2 = [i for i, t in enumerate(tracker_2.tracks) if t.is_confirmed()]
+    matches, unmatched_tracks_1, unmatched_tracks_2 = \
+    linear_assignment.matching_cascade(
+        cross_metric, threshold, tracker_1.max_age,
+        tracker_1.tracks, tracker_2.tracks, confirmed_tracks_1, confirmed_tracks_2)
+    
+    return matches, unmatched_tracks_1, unmatched_tracks_2
+
+def ROI_target_match(tracker, roi):
+
+    confirmed_tracks_2 = [i for i, t in enumerate(tracker.tracks) if t.is_confirmed()]
+    matches, _, _ = \
+    linear_assignment.min_cost_matching(
+        iou_matching.iou_cost, tracker.max_iou_distance, tracker.tracks,
+        roi, None, None)
+    if matches == []:
+        return False , 0
+    else:
+        return True, matches[0][0]
