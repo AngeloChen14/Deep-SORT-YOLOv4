@@ -21,20 +21,18 @@ from matplotlib import pyplot as plt
 
 warnings.filterwarnings('ignore')
 
-
 def main(yolo):
     # Definition of the parameters
-    max_cosine_distance = 0.3
-    max_cross_cosine_distance = 0.7
+    max_cosine_distance = 0.25
+    max_cross_cosine_distance = 0.5
     nn_budget = None
     nms_max_overlap = 0.5
     frame_rate = 12
 
+    file_path = 'reid-long2'
+    file_path2 = 'reid-wide2'
 
-    file_path = 'reid-wide3'
-    file_path2 = 'reid-long3'
-
-    show_detections = True
+    show_detections = False
     writeVideo_flag = False
     asyncVideo_flag = False
     beta_calulate_flag = False
@@ -117,6 +115,14 @@ def main(yolo):
         # Call the tracker
         tracker.predict()
         tracker.update(detections)
+        if alert_mode_flag:
+            if len(tracker.tracks) > 0:
+                ret =  tracker.tracks[track1_idx].is_confirmed()
+                if not ret:
+                    alert_mode_flag = False
+            else:
+                alert_mode_flag = False
+
         if not alert_mode_flag:
             for det in detections:
                 bbox = det.to_tlbr()
@@ -205,9 +211,14 @@ def main(yolo):
                 matches_id.append((tracker.tracks[track_1_idx].track_id,tracker2.tracks[track_2_idx].track_id))
             print("Matches:", matches_id)
             
-            # if alert_mode_flag and  tracker2.tracks[track_2_idx].is_confirmed()
-            #     alert_mode_flag = False
-                
+            if alert_mode_flag:
+                if len(tracker2.tracks) > 0:
+                    ret =  tracker2.tracks[track2_idx].is_confirmed()
+                    if not ret:
+                        alert_mode_flag = False
+                else:
+                    alert_mode_flag = False
+
             if not alert_mode_flag:
                 for det in detections:
                     bbox = det.to_tlbr()
@@ -238,9 +249,6 @@ def main(yolo):
                             track1_idx = t_list[0]
                             alert_mode_flag = True
             else:
-                ret =  tracker2.tracks[track2_idx].is_confirmed() and tracker.tracks[track1_idx].is_confirmed()
-                if not ret:
-                    alert_mode_flag = False
                 bbox = tracker2.tracks[track2_idx].to_tlbr()
                 cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (0, 0, 255), 2)
                 cv2.putText(frame, "ID: " + str(track.track_id), (int(bbox[0]), int(bbox[1])), 0,

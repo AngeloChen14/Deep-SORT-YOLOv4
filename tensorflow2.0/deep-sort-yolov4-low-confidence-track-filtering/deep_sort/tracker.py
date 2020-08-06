@@ -154,7 +154,7 @@ def cross_tracker_match(tracker_1, tracker_2, threshold):
     confirmed_tracks_1 = [i for i, t in enumerate(tracker_1.tracks) if t.is_confirmed()]
     confirmed_tracks_2 = [i for i, t in enumerate(tracker_2.tracks) if t.is_confirmed()]
     matches, unmatched_tracks_1, unmatched_tracks_2 = \
-    linear_assignment.matching_cascade(
+    linear_assignment.cross_matching_cascade(
         cross_metric, threshold, tracker_1.max_age,
         tracker_1.tracks, tracker_2.tracks, confirmed_tracks_1, confirmed_tracks_2)
     
