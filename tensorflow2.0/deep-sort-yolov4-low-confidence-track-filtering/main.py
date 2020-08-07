@@ -29,8 +29,8 @@ def main(yolo):
     nms_max_overlap = 0.5
     frame_rate = 12
 
-    file_path = 'reid-long2'
-    file_path2 = 'reid-wide2'
+    file_path = 'reid-wide2'
+    file_path2 = 'reid-long2'
 
     show_detections = False
     writeVideo_flag = False
@@ -115,8 +115,11 @@ def main(yolo):
         # Call the tracker
         tracker.predict()
         tracker.update(detections)
+        if predict_ns_flag:
+            tracker.predict_ns(predict_time)
+        
         if alert_mode_flag:
-            if len(tracker.tracks) > 0:
+            if len(tracker.tracks) > p:
                 ret =  tracker.tracks[track1_idx].is_confirmed()
                 if not ret:
                     alert_mode_flag = False
@@ -141,6 +144,7 @@ def main(yolo):
                 cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (255, 255, 255), 2)
                 cv2.putText(frame, "ID: " + str(track.track_id), (int(bbox[0]), int(bbox[1])), 0,
                             1e-3 * frame.shape[0], (0, 255, 0), 1)
+                
                 if predict_ns_flag:
                     if track.x_predict > 0 and track.x_predict < w :
                         cv2.circle(frame, (track.x_predict, int(h/2)), 15, (0, 0, 255), -1)
@@ -212,7 +216,7 @@ def main(yolo):
             print("Matches:", matches_id)
             
             if alert_mode_flag:
-                if len(tracker2.tracks) > 0:
+                if len(tracker2.tracks) > track2_idx:
                     ret =  tracker2.tracks[track2_idx].is_confirmed()
                     if not ret:
                         alert_mode_flag = False
