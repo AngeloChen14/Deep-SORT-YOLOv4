@@ -36,10 +36,10 @@ def main(yolo):
     tracker = Tracker(metric)
 
     tracking = True
-    writeVideo_flag = True
+    writeVideo_flag = False
     asyncVideo_flag = False
 
-    file_path = 'video.webm'
+    file_path = 'Motion-prediction.mp4'
     if asyncVideo_flag :
         video_capture = VideoCaptureAsync(file_path)
     else:

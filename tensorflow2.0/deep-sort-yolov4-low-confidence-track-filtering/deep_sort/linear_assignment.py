@@ -76,7 +76,6 @@ def min_cost_matching(
             matches.append((track_idx, detection_idx))
     return matches, unmatched_tracks, unmatched_detections
 
-
 def matching_cascade(
         distance_metric, max_distance, cascade_depth, tracks, detections,
         track_indices=None, detection_indices=None):
@@ -123,14 +122,19 @@ def matching_cascade(
 
     unmatched_detections = detection_indices
     matches = []
-    for level in range(cascade_depth):
+    for level in range(1,cascade_depth):
         if len(unmatched_detections) == 0:  # No detections left
             break
-
-        track_indices_l = [
-            k for k in track_indices
-            if tracks[k].time_since_update == 1 + level
-        ]
+        if level == 1:
+            track_indices_l = [
+                k for k in track_indices
+                if tracks[k].time_since_update <= level + 1
+            ]
+        else:
+            track_indices_l = [
+                k for k in track_indices
+                if tracks[k].time_since_update == level + 1
+            ]
         if len(track_indices_l) == 0:  # Nothing to match at this level
             continue
 
@@ -142,6 +146,40 @@ def matching_cascade(
     unmatched_tracks = list(set(track_indices) - set(k for k, _ in matches))
     return matches, unmatched_tracks, unmatched_detections
 
+def cross_matching_cascade(
+        distance_metric, max_distance, cascade_depth, tracks, detections,
+        track_indices=None, detection_indices=None):
+   
+    if track_indices is None:
+        track_indices = list(range(len(tracks)))
+    if detection_indices is None:
+        detection_indices = list(range(len(detections)))
+
+    unmatched_detections = detection_indices
+    matches = []
+    for level in range(cascade_depth):
+        if len(unmatched_detections) == 0:  # No detections left
+            break
+        if level == 0:
+            track_indices_l = [
+                k for k in track_indices
+                if tracks[k].time_since_update <= level + 1
+            ]
+        else:
+            track_indices_l = [
+                k for k in track_indices
+                if tracks[k].time_since_update == level + 1
+            ]
+        if len(track_indices_l) == 0:  # Nothing to match at this level
+            continue
+
+        matches_l, _, unmatched_detections = \
+            min_cost_matching(
+                distance_metric, max_distance, tracks, detections,
+                track_indices_l, unmatched_detections)
+        matches += matches_l
+    unmatched_tracks = list(set(track_indices) - set(k for k, _ in matches))
+    return matches, unmatched_tracks, unmatched_detections
 
 def gate_cost_matrix(
         kf, cost_matrix, tracks, detections, track_indices, detection_indices,
@@ -180,7 +218,7 @@ def gate_cost_matrix(
         Returns the modified cost matrix.
 
     """
-    gating_dim = 2 if only_position else 4
+    gating_dim = 4
     gating_threshold = kalman_filter.chi2inv95[gating_dim]
     measurements = np.asarray(
         [detections[i].to_xyah() for i in detection_indices])

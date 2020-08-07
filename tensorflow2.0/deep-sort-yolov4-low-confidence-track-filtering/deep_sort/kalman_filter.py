@@ -37,15 +37,44 @@ class KalmanFilter(object):
 
     """
 
-    def __init__(self):
-        ndim, dt = 4, 1.
+    def __init__(self,frame_rate):
+        ndim, dt = 9, 1. / frame_rate
+        alpha = 0.1 
+
+        ex=np.exp(-alpha*dt)
+        ex2=np.exp(-2*alpha*dt)
+        q11=(1-ex2+2*alpha*dt+2./3*alpha**3*dt**3-2*alpha**2*dt**2-4*alpha*dt*ex)/(2*alpha**5)
+        q12=(ex2+1-2*ex+2*alpha*dt*ex-2*alpha*dt+alpha**2*dt**2)/(2*alpha**4)
+        q13=(1-ex2-2*alpha*dt*ex)/(2*alpha**3)
+        q22=(4*ex-3-ex2+2*alpha*dt)/(2*alpha**3)
+        q23=(ex2+1-2*ex)/(2*alpha**2)
+        q33=(1-ex2)/(2*alpha)
 
         # Create Kalman filter model matrices.
-        self._motion_mat = np.eye(2 * ndim, 2 * ndim)
-        for i in range(ndim):
-            self._motion_mat[i, ndim + i] = dt
-        self._update_mat = np.eye(ndim, 2 * ndim)
+        self._F_mat = np.eye(ndim,  ndim)
+        for i in range(4):
+            self._F_mat[i, 4 + i] = dt
+        self._F_mat[0,-1] = dt*dt/2
+        self._F_mat[4,-1] = dt 
+        
+        self._motion_mat = self._F_mat.copy()
+        self._motion_mat[0,-1] = (-1+alpha*dt+ex)/alpha**2
+        self._motion_mat[4,-1] = (1-ex)/alpha
+        self._motion_mat[-1,-1] = ex
 
+        self._update_mat = np.eye(4, ndim)
+
+        self._Q0_mat = np.zeros((ndim,ndim))
+        self._Q0_mat[0,0]  = q11
+        self._Q0_mat[0,4]  = q12
+        self._Q0_mat[0,-1] = q13
+        self._Q0_mat[4,0]  = q12
+        self._Q0_mat[4,4]  = q22
+        self._Q0_mat[4,-1] = q23
+        self._Q0_mat[-1,0] = q13
+        self._Q0_mat[-1,4] = q22
+        self._Q0_mat[-1,-1] = q33
+        self._Q0_mat *= 4*alpha*frame_rate**2
         # Motion and observation uncertainty are chosen relative to the current
         # state estimate. These weights control the amount of uncertainty in
         # the model. This is a bit hacky.
@@ -71,7 +100,7 @@ class KalmanFilter(object):
         """
         mean_pos = measurement
         mean_vel = np.zeros_like(mean_pos)
-        mean = np.r_[mean_pos, mean_vel]
+        mean = np.r_[mean_pos, mean_vel,0]
 
         std = [
             2 * self._std_weight_position * measurement[3],
@@ -81,11 +110,12 @@ class KalmanFilter(object):
             10 * self._std_weight_velocity * measurement[3],
             10 * self._std_weight_velocity * measurement[3],
             1e-5,
+            10 * self._std_weight_velocity * measurement[3],
             10 * self._std_weight_velocity * measurement[3]]
         covariance = np.diag(np.square(std))
         return mean, covariance
 
-    def predict(self, mean, covariance):
+    def predict(self, mean, covariance, sigma):
         """Run Kalman filter prediction step.
 
         Parameters
@@ -105,18 +135,19 @@ class KalmanFilter(object):
 
         """
         std_pos = [
-            self._std_weight_position * mean[3],
+            0,
             self._std_weight_position * mean[3],
             1e-2,
             self._std_weight_position * mean[3]]
         std_vel = [
-            self._std_weight_velocity * mean[3],
+            0,
             self._std_weight_velocity * mean[3],
             1e-5,
-            self._std_weight_velocity * mean[3]]
+            self._std_weight_velocity * mean[3],
+            0]
         motion_cov = np.diag(np.square(np.r_[std_pos, std_vel]))
-
-        mean = np.dot(self._motion_mat, mean)
+        motion_cov += self._Q0_mat * sigma
+        mean = np.dot(self._F_mat, mean)
         covariance = np.linalg.multi_dot((
             self._motion_mat, covariance, self._motion_mat.T)) + motion_cov
 
@@ -181,12 +212,16 @@ class KalmanFilter(object):
         innovation = measurement - projected_mean
 
         new_mean = mean + np.dot(innovation, kalman_gain.T)
+        # new_covariance = covariance - np.linalg.multi_dot((
+        #     kalman_gain, projected_cov, kalman_gain.T))
         new_covariance = covariance - np.linalg.multi_dot((
-            kalman_gain, projected_cov, kalman_gain.T))
-        return new_mean, new_covariance
+          kalman_gain, self._update_mat, covariance))
+
+        sigma = (new_mean[4] - mean[4])**2 
+        return new_mean, new_covariance, sigma
 
     def gating_distance(self, mean, covariance, measurements,
-                        only_position=False):
+                        only_position=True):
         """Compute gating distance between state distribution and measurements.
 
         A suitable distance threshold can be obtained from `chi2inv95`. If

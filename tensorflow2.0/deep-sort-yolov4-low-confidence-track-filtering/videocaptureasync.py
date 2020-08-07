@@ -14,6 +14,8 @@ class VideoCaptureAsync():
         self.grabbed, self.frame = self.cap.read()
         self.started = False
         self.read_lock = threading.Lock()
+        self.first = True # add, wait long time for loading model at first frame
+        self.next = True # add, now can update next frame
 
     def set(self, var1, var2):
         self.cap.set(var1, var2)
@@ -29,6 +31,8 @@ class VideoCaptureAsync():
 
     def update(self):
         while self.started:
+            if not self.next: # add, wait long time for loading model at first frame, so it won't lost many frames
+                continue # add
             sleep(0.03)
             grabbed, frame = self.cap.read()
             with self.read_lock:
@@ -36,6 +40,13 @@ class VideoCaptureAsync():
                 self.frame = frame
 
     def read(self):
+        if self.first: # add
+            self.next = False # add, pause update() for loading model at first frame
+            self.first = False # add
+        else: # add
+            self.next = True # add
+        if self.frame is None:
+            return False, 0 
         with self.read_lock:
             frame = self.frame.copy()
             grabbed = self.grabbed

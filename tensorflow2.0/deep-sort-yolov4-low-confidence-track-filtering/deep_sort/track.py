@@ -75,10 +75,11 @@ class Track:
         self.counter = Counter()
         self.cls = None  # for most common class
 
-        self.total_prob = 0
+        self.total_prob = detection_confidence
         self.adc_threshold = adc_threshold  # Average detection confidence threshold
         self.detection_confidence = detection_confidence
         self.adc = 0
+        self.sigma = 1e6
 
         self.state = TrackState.Tentative
         self.features = []
@@ -87,6 +88,8 @@ class Track:
 
         self._n_init = n_init
         self._max_age = max_age
+        self.x_predict = 0
+        self.x_current = 0
 
     def to_tlwh(self):
         """Get current position in bounding box format `(top left x, top left y,
@@ -127,9 +130,12 @@ class Track:
             The Kalman filter.
 
         """
-        self.mean, self.covariance = kf.predict(self.mean, self.covariance)
+        self.mean, self.covariance = kf.predict(self.mean, self.covariance, self.sigma)
         self.age += 1
         self.time_since_update += 1
+
+    def predict_ns(self, kf, dt):
+        self.x_predict = int(self.mean[0] + self.mean[4]*dt)
 
     def update(self, kf, detection):
         """Perform Kalman filter measurement update step and update the feature
@@ -146,11 +152,12 @@ class Track:
             The associated detection.
 
         """
-        self.mean, self.covariance = kf.update(
+        self.mean, self.covariance, self.sigma = kf.update(
             self.mean, self.covariance, detection.to_xyah())
         self.features.append(detection.feature)
         self.counter[self.det_cls] += 1
         self.cls = self.counter.most_common(1)[0][0]  # get most common cls for track
+        self.x_current = detection.to_xyah()[0]
 
         self.hits += 1
         self.time_since_update = 0
@@ -165,7 +172,7 @@ class Track:
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step).
         """
-        if self.state == TrackState.Tentative:
+        if self.state == TrackState.Tentative and self.time_since_update > 2 :
             self.state = TrackState.Deleted
         elif self.time_since_update > self._max_age:
             self.state = TrackState.Deleted
